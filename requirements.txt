@@ -1,5 +1,3 @@
 pyTelegramBotAPI
 python-dotenv
 openai
-sqlite3
-requests
