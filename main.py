@@ -121,8 +121,15 @@ def chat(message):
     print(f"===\nUSER ID: {user_id}\n{chat_messages}\n===")
     # Format the response (for debugging purposes). Remove the one whitespace at the beginning of the response. 
     final_response = f"```{convo}```\n`Bot:` *{response[1:]}*"
-    # what is the equivalent of this but without replying?
-    bot.send_message(message.chat.id, final_response, parse_mode='Markdown')
+    # If the final response is longer than 4096 characters, split it into multiple messages
+    if len(final_response) > 4096:
+        # Split the response into multiple messages
+        messages = [final_response[i:i+4096] for i in range(0, len(final_response), 4096)]
+        # Send the messages
+        for message in messages:
+            bot.send_message(message.chat.id, message, parse_mode='Markdown')
+    else:
+        bot.send_message(message.chat.id, final_response, parse_mode='Markdown')
 
 # TODO: Buttons to reset the chatbot and to see the message limit
 
