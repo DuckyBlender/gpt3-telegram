@@ -18,22 +18,9 @@ bot = telebot.TeleBot(TOKEN)
 
 LIMIT = 100
 
-# Demo handlers
-
-
-# @bot.message_handler(commands=['start', 'hello'])
-# def send_welcome(message):
-#     bot.reply_to(message, "Howdy, how are you doing?")
-
-
-# Echo all messages
-# @bot.message_handler(func=lambda msg: True)
-# def echo_all(message):
-#     bot.reply_to(message, message.text)
-
 # /reset - Reset the chatbot
 @bot.message_handler(commands=['reset'])
-def reset_chat(message):
+def reset(message):
     # Save the message count to a variable
     # Then delete the user from the database and add him again with the message count (to log the chat messages)
 
@@ -56,7 +43,7 @@ def reset_chat(message):
     con.close()
     
     # Send the user a message to start the chat
-    bot.reply_to(message, 'Hi, I am a chatbot. How can I help you?')
+    bot.reply_to(message, 'Hi, I am a chatbot. How can I help you?', parse_mode='Markdown')
 
 @bot.message_handler(commands=['limit'])
 def limit(message):
@@ -136,6 +123,8 @@ def chat(message):
     final_response = f"```{convo}```\n`Bot:` *{response[1:]}*"
     # what is the equivalent of this but without replying?
     bot.send_message(message.chat.id, final_response, parse_mode='Markdown')
+
+# TODO: Buttons to reset the chatbot and to see the message limit
 
 
 # For debugging purpouses, remove the user.db at start
