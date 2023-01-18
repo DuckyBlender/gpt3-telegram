@@ -1,23 +1,20 @@
 import datetime
 import os
-import telebot
+from telebot.async_telebot import AsyncTeleBot
 from dotenv import load_dotenv
-import requests
+import aiohttp
 import openai
 import sqlite3
 import schedule
-# import the thing that makes the bot type when it's thinking
-from telebot import apihelper
-# import the thing that adds buttons
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-# split the text into chunks
-from telebot import util
+import asyncio
+import time
+from datetime import datetime, timedelta
 
 load_dotenv()
 
 TOKEN = os.environ.get('TELEGRAM_KEY')
 openai.api_key = os.environ.get("OPENAI_KEY")
-bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
+bot = AsyncTeleBot(TOKEN, parse_mode="Markdown")
 
 LIMIT = 100  # Per day per user in minutes
 TIMEOUT = 5  # Minutes
@@ -30,7 +27,7 @@ MODEL = "text-curie-001"
 
 # /help - Show the help message
 @bot.message_handler(commands=['help'])
-def help(message):
+async def help(message):
     # Send the user a message with the help text
     help_text = f"Hi, I'm a chatbot (`{MODEL}` model from OpenAI). To get started, just type something in the chat!\n*You can use the following commands:*\n/start - Start the chatbot\n/help - Show this message\n/limit - Show how many messages you have left (message limit resets every midnight UTC)\n/save - Save the conversation to a txt file\n/reset - Reset the chatbot"
     # Get the user id
@@ -38,27 +35,26 @@ def help(message):
     # Get his message limit
     con = sqlite3.connect('users.db')
     cursor = con.cursor()
-    cursor.execute(
-        "SELECT message_count FROM users WHERE user_id = ?", (user_id,))
-    # Check if this was successful
-    if cursor.fetchone() is None:
+    try:
+        cursor.execute(
+            "SELECT message_count FROM users WHERE user_id = ?", (user_id,))
+        message_count = cursor.fetchone()[0]
+    except:
         con.close()
-        bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
-        return
-    message_count = cursor.fetchone()[0]
+        message_count = 0
     con.close()
     help_text += f"\n\nYou have used `{message_count}`/`{LIMIT}` messages"
-    bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+    await bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
 
 
 # /reset - Reset the chatbot
 @bot.message_handler(commands=['reset'])
-def reset(message):
+async def reset(message):
     # Save the message count to a variable
     # Then delete the user from the database and add him again with the message count (to log the chat messages)
 
     user_id = message.from_user.id
-    now = datetime.datetime.now()
+    now = datetime.now()
     con = sqlite3.connect('users.db')
     cursor = con.cursor()
 
@@ -69,9 +65,10 @@ def reset(message):
         message_count = cursor.fetchone()[0]
     except:
         con.close()
-        bot.send_message(message.chat.id, "You have not even started a conversation yet!")
+        bot.send_message(
+            message.chat.id, "You have not even started a conversation yet!")
         return
-        
+
     # Delete the user
     cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
 
@@ -83,12 +80,14 @@ def reset(message):
     con.close()
 
     # Send the user a message to start the chat
-    bot.reply_to(message, 'Hi, I am a chatbot. How can I help you?',
-                 parse_mode='Markdown')
+    await bot.reply_to(message, 'Hi, I am a chatbot. How can I help you?',
+                       parse_mode='Markdown')
 
 # /limit - Show how many messages you have left (message limit resets every midnight UTC)
+
+
 @bot.message_handler(commands=['limit'])
-def limit(message):
+async def limit(message):
     user_id = message.from_user.id
     con = sqlite3.connect('users.db')
     cursor = con.cursor()
@@ -106,14 +105,14 @@ def limit(message):
         bot.reply_to(
             message, f"You have used `{message_count}`/`{LIMIT}` messages. You have exceeded your message limit. Please wait until tomorrow for more messages.", parse_mode='Markdown')
         return
-    bot.reply_to(
+    await bot.reply_to(
         message, f"You have used `{message_count}`/`{LIMIT}` messages.", parse_mode='Markdown')
 
 # /save - Save the conversation to a txt file
 
 
 @bot.message_handler(commands=['save'])
-def save(message):
+async def save(message):
     # Get the user id
     user_id = message.from_user.id
     # Connect to the database and get the chat messages
@@ -125,7 +124,8 @@ def save(message):
         chat_messages = cursor.fetchone()[0]
     except:
         con.close()
-        bot.send_message(message.chat.id, "You have not even started a conversation yet!")
+        bot.send_message(
+            message.chat.id, "You have not even started a conversation yet!")
         return
     # Remove whitespaces from the beginning and end of the string
     chat_messages = chat_messages.strip()
@@ -134,14 +134,16 @@ def save(message):
     with open(f"{user_id}.txt", "w") as f:
         f.write(chat_messages)
     # Send the txt file to the user
-    bot.reply_to(message, "Here is our conversation so far. Would you like to clear the conversation and start over? If so, use the /reset command.")
-    bot.send_document(message.chat.id, open(f"{user_id}.txt", 'rb'))
+    await bot.reply_to(message, "Here is our conversation so far. Would you like to clear the conversation and start over? If so, use the /reset command.")
+    await bot.send_document(message.chat.id, open(f"{user_id}.txt", 'rb'))
     # Delete the txt file
     os.remove(f"{user_id}.txt")
 
 # Get message from user and send it to the OpenAI API to get a response back. Keep the conversation going until the user does not respond for TIMEOUT minutes.
+
+
 @bot.message_handler(func=lambda msg: True)
-def chat(message):
+async def chat(message):
     # Log the users chat id to the database
     user_id = message.from_user.id
     # Connect to the database and insert the user with the expiration date
@@ -169,7 +171,7 @@ def chat(message):
         # Insert the user
         chat_messages = f"\nUser: {message.text}"
         # Current date and time
-        now = datetime.datetime.now()
+        now = datetime.now()
         cursor.execute("INSERT INTO users VALUES (?, ?, ?, ?)",
                        (user_id, chat_messages, 0, now))
 
@@ -181,7 +183,7 @@ def chat(message):
     # Append the bot prefix to the message
     chat_messages += f"\nBot:"
     # Start "typing" to the user
-    bot.send_chat_action(message.chat.id, 'typing')
+    await bot.send_chat_action(message.chat.id, 'typing')
 
     # Get response from OpenAI API
     response = openai.Completion.create(
@@ -219,23 +221,10 @@ def chat(message):
     if len(convo) > 3800:
         convo = f"(message shortened because of message length limit. to show entire conversation execute /save)\n{convo[-3800:]}"
     # Send the response to the user
-    bot.send_message(
+    await bot.send_message(
         message.chat.id, f"```{convo}```\n`Bot:` *{response}*", parse_mode='Markdown')
 
 
-# Reset the message limits function
-def reset_message_limits():
-    print("Resetting message limits...")
-    con = sqlite3.connect('users.db')
-    cursor = con.cursor()
-    cursor.execute("UPDATE users SET message_count = 0")
-    con.commit()
-    con.close()
-    print("Reset message limits.")
-    
-# Execute it every midnight UTC (current time is UTC+1)
-# Ignore that, execute every 10 seconds for debugging purposes
-schedule.every(10).seconds.do(reset_message_limits)
 
 # For debugging purpouses, remove the user.db at start
 # if os.path.exists('users.db'):
@@ -256,28 +245,36 @@ if not os.path.exists('users.db'):
     con.commit()
     con.close()
 
-# Update the slash commands on the server using requests
-requests.post(f"https://api.telegram.org/bot{TOKEN}/setMyCommands", json={
-    "commands": [
-        {
-            "command": "help",
-            "description": "Get all commands and their description"
-        },
-        {
-            "command": "reset",
-            "description": "Reset the chatbot"
-        },
-        {
-            "command": "limit",
-            "description": "View your message limit"
-        },
-        {
-            "command": "save",
-            "description": "Save the chat to a txt file"
-        }
-    ]
-})
+# Update the slash commands on the server using aiohttp
+async def update_slash_commands():
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"https://api.telegram.org/bot{TOKEN}/setMyCommands", json={
+            "commands": [
+                {
+                    "command": "help",
+                    "description": "Get all commands and their description"
+                },
+                {
+                    "command": "reset",
+                    "description": "Reset the chatbot"
+                },
+                {
+                    "command": "limit",
+                    "description": "View your message limit"
+                },
+                {
+                    "command": "save",
+                    "description": "Save the chat to a txt file"
+                }
+            ]
+        }) as resp:
+            if resp.status == 200:
+                print("Updated slash commands.")
+            else:
+                print("Could not update slash commands.")
+    
+# Update the slash commands
+asyncio.run(update_slash_commands())
 
-
-# Start the bot
-bot.infinity_polling()
+# Run the main function
+asyncio.run(bot.polling())
