@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 import aiohttp
 import openai
 import sqlite3
-import schedule
 import asyncio
 import time
 from datetime import datetime, timedelta
@@ -26,7 +25,7 @@ MODEL = "text-curie-001"
 
 
 # /help - Show the help message
-@bot.message_handler(commands=['help'])
+@bot.message_handler(commands=['help', 'help@gptduckbot'])
 async def help(message):
     # Send the user a message with the help text
     help_text = f"Hi, I'm a chatbot (`{MODEL}` model from OpenAI). To get started, just type something in the chat!\n*You can use the following commands:*\n/start - Start the chatbot\n/help - Show this message\n/limit - Show how many messages you have left (message limit resets every midnight UTC)\n/save - Save the conversation to a txt file\n/reset - Reset the chatbot"
@@ -48,7 +47,7 @@ async def help(message):
 
 
 # /reset - Reset the chatbot
-@bot.message_handler(commands=['reset'])
+@bot.message_handler(commands=['reset', 'reset@gptduckbot'])
 async def reset(message):
     # Save the message count to a variable
     # Then delete the user from the database and add him again with the message count (to log the chat messages)
@@ -86,7 +85,7 @@ async def reset(message):
 # /limit - Show how many messages you have left (message limit resets every midnight UTC)
 
 
-@bot.message_handler(commands=['limit'])
+@bot.message_handler(commands=['limit', 'limit@gptduckbot'])
 async def limit(message):
     user_id = message.from_user.id
     con = sqlite3.connect('users.db')
@@ -111,7 +110,7 @@ async def limit(message):
 # /save - Save the conversation to a txt file
 
 
-@bot.message_handler(commands=['save'])
+@bot.message_handler(commands=['save', 'save@gptduckbot'])
 async def save(message):
     # Get the user id
     user_id = message.from_user.id
@@ -140,12 +139,38 @@ async def save(message):
     os.remove(f"{user_id}.txt")
 
 # /ask - Ask the chatbot a question
-@bot.message_handler(commands=['ask'])
+@bot.message_handler(commands=['ask', 'ask@gptduckbot'])
 async def ask(message):
     # This command is a simpler version of the chatbot. It only asks the OpenAI API for a response to the question and does not preserve context. This command works in groups
+    # First, get the users message count from the database
+    user_id = message.from_user.id
+    con = sqlite3.connect('users.db')
+    cursor = con.cursor()
+    try:
+        cursor.execute(
+            "SELECT message_count FROM users WHERE user_id = ?", (user_id,))
+        message_count = cursor.fetchone()[0]
+        # Add 1 to the message count
+        cursor.execute(
+            "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?", (user_id,))
+        con.commit()
+        con.close()
+    except:
+        con.close()
+        message_count = 0
+    # If the user has exceeded the message limit, do not let him use the command
+    if message_count > LIMIT:
+        bot.reply_to(
+            message, f"You have used `{message_count}`/`{LIMIT}` messages. You have exceeded your message limit. Please wait until tomorrow for more messages.", parse_mode='Markdown')
+        return
     # Get the question from the user
-    question = message.text.split("/ask ", 1)[1]
+    question = message.text
+    # Remove the /ask or /ask@gptduckbot from the question
+    question = question.replace("/ask", "")
+    question = question.replace("@gptduckbot", "")
+    question = question.strip()
     # Send the question to the OpenAI API
+    print(question)
     response = openai.Completion.create(
         model=MODEL,
         prompt=question,
@@ -157,6 +182,8 @@ async def ask(message):
     await bot.reply_to(message, response['choices'][0]['text'])
 
 # Get message from user and send it to the OpenAI API to get a response back. Keep the conversation going until the user does not respond for TIMEOUT minutes.
+
+
 @bot.message_handler(func=lambda msg: True)
 async def chat(message):
     # If the message is in a group, ignore it. You need to use the /ask command in a group.
@@ -246,7 +273,6 @@ async def chat(message):
         message.chat.id, f"```{convo}```\n`Bot:` *{response}*", parse_mode='Markdown')
 
 
-
 # For debugging purpouses, remove the user.db at start
 # if os.path.exists('users.db'):
 #     os.remove('users.db')
@@ -267,6 +293,8 @@ if not os.path.exists('users.db'):
     con.close()
 
 # Update the slash commands on the server using aiohttp
+
+
 async def update_slash_commands():
     async with aiohttp.ClientSession() as session:
         async with session.post(f"https://api.telegram.org/bot{TOKEN}/setMyCommands", json={
@@ -297,7 +325,7 @@ async def update_slash_commands():
                 print("Updated slash commands.")
             else:
                 print("Could not update slash commands.")
-    
+
 # Update the slash commands
 asyncio.run(update_slash_commands())
 
