@@ -139,11 +139,32 @@ async def save(message):
     # Delete the txt file
     os.remove(f"{user_id}.txt")
 
+# /ask - Ask the chatbot a question
+@bot.message_handler(commands=['ask'])
+async def ask(message):
+    # This command is a simpler version of the chatbot. It only asks the OpenAI API for a response to the question and does not preserve context. This command works in groups
+    # Get the question from the user
+    question = message.text.split("/ask ", 1)[1]
+    # Send the question to the OpenAI API
+    response = openai.Completion.create(
+        model=MODEL,
+        prompt=question,
+        stop=["\nUser:", "\nBot:"],
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+    )
+    # Send the response to the user
+    await bot.reply_to(message, response['choices'][0]['text'])
+
 # Get message from user and send it to the OpenAI API to get a response back. Keep the conversation going until the user does not respond for TIMEOUT minutes.
-
-
 @bot.message_handler(func=lambda msg: True)
 async def chat(message):
+    # If the message is in a group, ignore it. You need to use the /ask command in a group.
+    if message.chat.type == "group":
+        return
+    # If the message starts with /, ignore it. This is to prevent the bot from replying to commands.
+    if message.text.startswith("/"):
+        return
     # Log the users chat id to the database
     user_id = message.from_user.id
     # Connect to the database and insert the user with the expiration date
@@ -253,6 +274,10 @@ async def update_slash_commands():
                 {
                     "command": "help",
                     "description": "Get all commands and their description"
+                },
+                {
+                    "command": "ask",
+                    "description": "Ask the chatbot a question"
                 },
                 {
                     "command": "reset",
