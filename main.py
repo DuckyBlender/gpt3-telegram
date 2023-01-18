@@ -13,6 +13,7 @@ load_dotenv()
 
 TOKEN = os.environ.get('TELEGRAM_KEY')
 openai.api_key = os.environ.get("OPENAI_KEY")
+# bot = AsyncTeleBot(TOKEN, parse_mode="Markdown")
 bot = AsyncTeleBot(TOKEN, parse_mode="Markdown")
 
 LIMIT = 100  # Per day per user in minutes
@@ -20,8 +21,8 @@ TIMEOUT = 5  # Minutes
 
 MAX_TOKENS = 150
 TEMPERATURE = 0.7
-#MODEL = "text-davinci-003"
-MODEL = "text-curie-001"
+MODEL = "text-davinci-003"
+#MODEL = "text-curie-001"
 
 
 # /help - Show the help message
@@ -43,7 +44,14 @@ async def help(message):
         message_count = 0
     con.close()
     help_text += f"\n\nYou have used `{message_count}`/`{LIMIT}` messages"
-    await bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+    await bot.reply_to(message, help_text)
+
+# /info - Show the bot configuration
+
+
+@bot.message_handler(commands=['info', 'info@gptduckbot'])
+async def info(message):
+    await bot.reply_to(message, f"Model: `{MODEL}`\nTemperature: `{TEMPERATURE}`\nMax tokens: `{MAX_TOKENS}`\nMessage limit: `{LIMIT}`\nTimeout: `{TIMEOUT}`")
 
 
 # /reset - Reset the chatbot
@@ -79,8 +87,7 @@ async def reset(message):
     con.close()
 
     # Send the user a message to start the chat
-    await bot.reply_to(message, 'Hi, I am a chatbot. How can I help you?',
-                       parse_mode='Markdown')
+    await bot.reply_to(message, 'Hi, I am a chatbot. How can I help you?')
 
 # /limit - Show how many messages you have left (message limit resets every midnight UTC)
 
@@ -102,10 +109,10 @@ async def limit(message):
 
     if message_count > LIMIT:
         bot.reply_to(
-            message, f"You have used `{message_count}`/`{LIMIT}` messages. You have exceeded your message limit. Please wait until tomorrow for more messages.", parse_mode='Markdown')
+            message, f"You have used `{message_count}`/`{LIMIT}` messages. You have exceeded your message limit. Please wait until tomorrow for more messages.")
         return
     await bot.reply_to(
-        message, f"You have used `{message_count}`/`{LIMIT}` messages.", parse_mode='Markdown')
+        message, f"You have used `{message_count}`/`{LIMIT}` messages.")
 
 # /save - Save the conversation to a txt file
 
@@ -129,8 +136,8 @@ async def save(message):
     # Remove whitespaces from the beginning and end of the string
     chat_messages = chat_messages.strip()
     con.close()
-    # Save the chat messages to a txt file
-    with open(f"{user_id}.txt", "w") as f:
+    # Save the chat messages to a txt file, use Utf-8 encoding
+    with open(f"{user_id}.txt", "w", encoding="utf-8") as f:
         f.write(chat_messages)
     # Send the txt file to the user
     await bot.reply_to(message, "Here is our conversation so far. Would you like to clear the conversation and start over? If so, use the /reset command.")
@@ -139,6 +146,8 @@ async def save(message):
     os.remove(f"{user_id}.txt")
 
 # /ask - Ask the chatbot a question
+
+
 @bot.message_handler(commands=['ask', 'ask@gptduckbot'])
 async def ask(message):
     # This command is a simpler version of the chatbot. It only asks the OpenAI API for a response to the question and does not preserve context. This command works in groups
@@ -161,7 +170,7 @@ async def ask(message):
     # If the user has exceeded the message limit, do not let him use the command
     if message_count > LIMIT:
         bot.reply_to(
-            message, f"You have used `{message_count}`/`{LIMIT}` messages. You have exceeded your message limit. Please wait until tomorrow for more messages.", parse_mode='Markdown')
+            message, f"You have used `{message_count}`/`{LIMIT}` messages\. You have exceeded your message limit. Please wait until tomorrow for more messages.")
         return
     # Get the question from the user
     question = message.text
@@ -169,8 +178,10 @@ async def ask(message):
     question = question.replace("/ask", "")
     question = question.replace("@gptduckbot", "")
     question = question.strip()
+    # Format the question
+    question = f"You are a super advanced bot. Answer this question.\nUser: {question}\nBot:"
+    await bot.send_chat_action(message.chat.id, 'typing')
     # Send the question to the OpenAI API
-    print(question)
     response = openai.Completion.create(
         model=MODEL,
         prompt=question,
@@ -178,6 +189,7 @@ async def ask(message):
         max_tokens=MAX_TOKENS,
         temperature=TEMPERATURE,
     )
+    print(response['choices'][0]['text'])
     # Send the response to the user
     await bot.reply_to(message, response['choices'][0]['text'])
 
@@ -269,8 +281,7 @@ async def chat(message):
     if len(convo) > 3800:
         convo = f"(message shortened because of message length limit. to show entire conversation execute /save)\n{convo[-3800:]}"
     # Send the response to the user
-    await bot.send_message(
-        message.chat.id, f"```{convo}```\n`Bot:` *{response}*", parse_mode='Markdown')
+    await bot.reply_to(message.chat.id, f"```{convo}```\n`Bot:` *{response}*")
 
 
 # For debugging purpouses, remove the user.db at start
@@ -302,6 +313,10 @@ async def update_slash_commands():
                 {
                     "command": "help",
                     "description": "Get all commands and their description"
+                },
+                {
+                    "command": "info",
+                    "description": "Get info about the chatbot"
                 },
                 {
                     "command": "ask",
