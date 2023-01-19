@@ -39,7 +39,10 @@ db.run(
 
 // Update the slash commands
 bot.telegram.setMyCommands([
-    { command: "/start", description: "Show instructions on how to use the bot" },
+    {
+        command: "/start",
+        description: "Show instructions on how to use the bot",
+    },
     { command: "/help", description: "Show this message" },
     { command: "/info", description: "Show info about the bot" },
     { command: "/ask", description: "Ask the bot a question" },
@@ -54,9 +57,9 @@ bot.telegram.setMyCommands([
 
 // Start command
 bot.command("start", (ctx) => {
-    const start_text = `To start, just send me a message. To see the list of commands, do /help.`
+    const start_text = `To start, just send me a message. To see the list of commands, do /help.`;
     ctx.replyWithMarkdown(start_text);
-}); 
+});
 
 // Help command
 bot.command("help", (ctx) => {
@@ -170,9 +173,7 @@ bot.command("save", (ctx) => {
 bot.command("ask", (ctx) => {
     // Get users ID
     const user_id = ctx.message.from.id;
-    // Get the users message count from the database
     // Check if the user exists in the database
-
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
             ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
@@ -195,10 +196,16 @@ bot.command("ask", (ctx) => {
             if (message_count < LIMIT) {
                 // Get the users message
                 const message = ctx.message.text.split(" ").slice(1).join(" ");
+                // If the message is empty, send a message to the user
+                if (message === "") {
+                    ctx.reply("Please enter a message!");
+                    return;
+                }
+
                 // Format the request to OpenAI
                 const request = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.\nHuman: ${message}\nAI:`;
                 // Send the message to OpenAI
-                ctx.replyWithChatAction('typing');
+                ctx.replyWithChatAction("typing");
                 const response = openai.createCompletion({
                     model: MODEL,
                     prompt: request,
@@ -273,8 +280,8 @@ bot.on("message", (ctx) => {
                 } else {
                     request = `${chat_messages}\nHuman: ${message}\nAI:`;
                 }
-                
-                ctx.replyWithChatAction('typing');
+
+                ctx.replyWithChatAction("typing");
                 // Send the message to OpenAI
                 const response = openai.createCompletion({
                     model: MODEL,
@@ -314,6 +321,7 @@ bot.on("message", (ctx) => {
     });
 });
 
+console.log(`Bot started.`);
 // Launch the bot
 bot.launch();
 
