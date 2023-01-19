@@ -140,8 +140,8 @@ bot.command("save", (ctx) => {
                     `./saves/${user_id}.txt`,
                     chat_messages,
                     "utf8",
-                    (err) => {
-                        if (err) {
+                    (error) => {
+                        if (error) {
                             ctx.replyWithMarkdown(
                                 `An error has occured: \`${err}\``
                             );
@@ -153,10 +153,10 @@ bot.command("save", (ctx) => {
                             );
                             // Delete the file after 1 minute
                             setTimeout(() => {
-                                fs.unlink(`./saves/${user_id}.txt`, (error) => {
-                                    if (error) {
+                                fs.unlink(`./saves/${user_id}.txt`, (errorr) => {
+                                    if (errorr) {
                                         ctx.replyWithMarkdown(
-                                            `An error has occured: \`${error}\``
+                                            `An error has occured: \`${errorr}\``
                                         );
                                     }
                                 });
