@@ -70,7 +70,7 @@ bot.command("reset", (ctx) => {
     // If the user exists in the database, fetch his message count and store it in a variable. Delete the user from the database and insert a new user with the same ID and the same message count.
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
-			ctx.replyWithMarkdown(`An error has occured: \`${err}\``)
+            ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
             if (row) {
                 const message_count = row.message_count;
@@ -94,7 +94,7 @@ bot.command("limit", (ctx) => {
     // Get the users message count from the database
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
-            ctx.replyWithMarkdown(`An error has occured: \`${err}\``)
+            ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
             if (row) {
                 const message_count = row.message_count;
@@ -120,7 +120,7 @@ bot.command("save", (ctx) => {
     // Get the users messages from the database
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
-            ctx.reply(`An error has occured: ${err}`)
+            ctx.reply(`An error has occured: ${err}`);
         } else {
             if (row) {
                 const chat_messages = row.chat_messages;
@@ -131,7 +131,9 @@ bot.command("save", (ctx) => {
                     "utf8",
                     (err) => {
                         if (err) {
-                            ctx.replyWithMarkdown(`An error has occured: \`${err}\``)
+                            ctx.replyWithMarkdown(
+                                `An error has occured: \`${err}\``
+                            );
                         } else {
                             // Send the file to the user with a message
                             ctx.replyWithDocument(
@@ -142,7 +144,9 @@ bot.command("save", (ctx) => {
                             setTimeout(() => {
                                 fs.unlink(`./saves/${user_id}.txt`, (err) => {
                                     if (err) {
-                                        ctx.replyWithMarkdown(`An error has occured: \`${err}\``)
+                                        ctx.replyWithMarkdown(
+                                            `An error has occured: \`${err}\``
+                                        );
                                     }
                                 });
                             }, 1 * 60 * 1000);
@@ -164,7 +168,7 @@ bot.command("ask", (ctx) => {
 
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
-            ctx.replyWithMarkdown(`An error has occured: \`${err}\``)
+            ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
             let message_count = 0;
             let chat_messages = "";
@@ -227,7 +231,7 @@ bot.on("message", (ctx) => {
     // Check if the user exists in the database
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
-            ctx.replyWithMarkdown(`An error has occured: \`${err}\``)
+            ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
             let message_count = 0;
             let chat_messages = "";
