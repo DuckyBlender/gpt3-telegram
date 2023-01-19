@@ -171,10 +171,8 @@ bot.command("ask", (ctx) => {
             ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
             let message_count = 0;
-            let chat_messages = "";
             if (row) {
                 message_count = row.message_count;
-                chat_messages = row.chat_messages;
             } else {
                 // Create a new user in the database
                 const date = new Date()
@@ -182,7 +180,6 @@ bot.command("ask", (ctx) => {
                     .slice(0, 19)
                     .replace("T", " ");
                 message_count = 0;
-                chat_messages = "";
                 db.run(
                     `INSERT INTO users VALUES (${user_id}, "", ${message_count}, '${date}')`
                 );
