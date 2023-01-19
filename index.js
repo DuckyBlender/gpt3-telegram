@@ -198,7 +198,7 @@ bot.command("ask", (ctx) => {
                 // Format the request to OpenAI
                 const request = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.\nHuman: ${message}\nAI:`;
                 // Send the message to OpenAI
-                ctx.replyWithStatus('typing');
+                ctx.replyWithChatAction('typing');
                 const response = openai.createCompletion({
                     model: MODEL,
                     prompt: request,
@@ -274,7 +274,7 @@ bot.on("message", (ctx) => {
                     request = `${chat_messages}\nHuman: ${message}\nAI:`;
                 }
                 
-                ctx.replyWithStatus('typing');
+                ctx.replyWithChatAction('typing');
                 // Send the message to OpenAI
                 const response = openai.createCompletion({
                     model: MODEL,
