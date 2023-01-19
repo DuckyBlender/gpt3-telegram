@@ -1,0 +1,2 @@
+This is the folder in which conversations eill be saved temporarily for the /save command to function.
+This text file is for the folder to save on GitHub.
