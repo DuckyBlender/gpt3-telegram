@@ -3,6 +3,7 @@ const dotenv = require("dotenv");
 const { Configuration, OpenAIApi } = require("openai");
 const sqlite3 = require("sqlite3").verbose();
 const fs = require("fs");
+const cron = require("node-cron");
 
 dotenv.config();
 
@@ -319,6 +320,12 @@ bot.on("message", (ctx) => {
             }
         }
     });
+});
+
+// Every day at 23:00 (UTC time in Polish timezone) reset the message count for all users
+cron.schedule("0 23 * * *", () => {
+    console.log("Resetting message count for all users.");
+    db.run(`UPDATE users SET message_count = 0`);
 });
 
 console.log(`Bot started.`);
