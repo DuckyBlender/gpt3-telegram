@@ -142,10 +142,10 @@ bot.command("save", (ctx) => {
                             );
                             // Delete the file after 1 minute
                             setTimeout(() => {
-                                fs.unlink(`./saves/${user_id}.txt`, (err) => {
-                                    if (err) {
+                                fs.unlink(`./saves/${user_id}.txt`, (error) => {
+                                    if (error) {
                                         ctx.replyWithMarkdown(
-                                            `An error has occured: \`${err}\``
+                                            `An error has occured: \`${error}\``
                                         );
                                     }
                                 });
