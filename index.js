@@ -187,10 +187,10 @@ bot.command("ask", (ctx) => {
                 const request = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.\nHuman: ${message}\nAI:`;
                 // Send the message to OpenAI
                 const response = openai.createCompletion({
-                    engine: MODEL,
+                    model: MODEL,
                     prompt: request,
                     temperature: TEMPERATURE,
-                    maxTokens: MAX_TOKENS,
+                    max_tokens: MAX_TOKENS,
 					stop: ["\nHuman:", "\nAI:"],
                 });
                 // Send the response back to the user
