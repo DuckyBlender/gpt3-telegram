@@ -39,7 +39,10 @@ db.run(
 
 // Update the slash commands
 bot.telegram.setMyCommands([
-    { command: "/start", description: "Show instructions on how to use the bot" },
+    {
+        command: "/start",
+        description: "Show instructions on how to use the bot",
+    },
     { command: "/help", description: "Show this message" },
     { command: "/info", description: "Show info about the bot" },
     { command: "/ask", description: "Ask the bot a question" },
@@ -54,9 +57,9 @@ bot.telegram.setMyCommands([
 
 // Start command
 bot.command("start", (ctx) => {
-    const start_text = `To start, just send me a message. To see the list of commands, do /help.`
+    const start_text = `To start, just send me a message. To see the list of commands, do /help.`;
     ctx.replyWithMarkdown(start_text);
-}); 
+});
 
 // Help command
 bot.command("help", (ctx) => {
