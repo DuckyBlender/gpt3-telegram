@@ -1,5 +1,0 @@
-pyTelegramBotAPI
-python-dotenv
-openai
-schedule
-asyncio
