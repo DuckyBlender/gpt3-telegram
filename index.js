@@ -2,6 +2,7 @@ const { Telegraf } = require("telegraf");
 const dotenv = require("dotenv");
 const { Configuration, OpenAIApi } = require("openai");
 const sqlite3 = require("sqlite3").verbose();
+const fs = require("fs");
 
 dotenv.config();
 
@@ -10,8 +11,8 @@ const TIMEOUT = 5;
 
 const MAX_TOKENS = 150;
 const TEMPERATURE = 0.7;
-const MODEL = "text-davinci-003";
-// const MODEL = "text-curie-001";
+// const MODEL = "text-davinci-003";
+const MODEL = "text-curie-001";
 
 const config = new Configuration({
     apiKey: process.env.OPENAI_KEY,
@@ -98,12 +99,12 @@ bot.command("limit", (ctx) => {
             if (row) {
                 const message_count = row.message_count;
                 if (message_count < LIMIT) {
-                    ctx.reply(
-                        `You have ${LIMIT - message_count} messages left.`
+                    ctx.replyWithMarkdown(
+                        `You have \`${LIMIT - message_count}\` messages left.`
                     );
                 } else {
-                    ctx.reply(
-                        `You have reached the message limit of ${LIMIT} messages. Please wait until midnight UTC to send more messages.`
+                    ctx.replyWithMarkdown(
+                        `You have reached the message limit of \`${LIMIT}\` messages. Please wait until midnight UTC to send more messages.`
                     );
                 }
             } else {
@@ -124,23 +125,34 @@ bot.command("save", (ctx) => {
             if (row) {
                 const chat_messages = row.chat_messages;
                 // Create a file with the users messages
-                fs.writeFile(`./${user_id}.txt`, chat_messages, (err) => {
-                    if (err) {
-                        console.log(err);
-                    } else {
-                        // Send the file to the user with a message
-                        ctx.replyWithDocument(
-                            { source: `./${user_id}.txt` },
-                            { caption: "Here is your chat history:" }
-                        );
-                        // Delete the file after it has been sent
-                        fs.unlink(`./${user_id}.txt`, (err) => {
-                            if (err) {
-                                console.log(err);
-                            }
-                        });
+                fs.writeFile(
+                    `./saves/${user_id}.txt`,
+                    chat_messages,
+                    "utf8",
+                    (err) => {
+                        if (err) {
+                            console.log(err);
+                            ctx.replyWithMarkdown(`Error: \`${err}\``);
+                        } else {
+                            // Send the file to the user with a message
+                            ctx.replyWithDocument(
+                                { source: `./saves/${user_id}.txt` },
+                                { caption: "Here is our chat history so far" }
+                            );
+                            // Delete the file after 1 minute
+                            setTimeout(() => {
+                                fs.unlink(`./saves/${user_id}.txt`, (err) => {
+                                    if (err) {
+                                        console.log(err);
+                                        ctx.replyWithMarkdown(
+                                            `Error: \`${err}\``
+                                        );
+                                    }
+                                });
+                            }, 1 * 60 * 1000);
+                        }
                     }
-                });
+                );
             } else {
                 ctx.reply("You have not started a conversation yet!");
             }
@@ -191,37 +203,130 @@ bot.command("ask", (ctx) => {
                     prompt: request,
                     temperature: TEMPERATURE,
                     max_tokens: MAX_TOKENS,
-					stop: ["\nHuman:", "\nAI:"],
+                    stop: ["\nHuman:", "\nAI:"],
                 });
                 // Send the response back to the user
                 response.then((data) => {
-					const reply = data.data.choices[0].text;
-					ctx.reply(reply);
-					// Update the users message count in the database
-					db.run(
-						`UPDATE users SET message_count = message_count + 1 WHERE user_id = ${user_id}`
-					);
-				});
+                    const reply = data.data.choices[0].text;
+                    ctx.reply(reply);
+                    // Update the users message count in the database
+                    db.run(
+                        `UPDATE users SET message_count = message_count + 1 WHERE user_id = ${user_id}`
+                    );
+                });
             } else {
-                ctx.reply(
-                    `You have reached the message limit of ${LIMIT} messages. Please wait until midnight UTC to send more messages.`
+                ctx.replyWithMarkdown(
+                    `You have reached the message limit of \`${LIMIT}\` messages. Please wait until midnight UTC to send more messages.`
                 );
             }
         }
     });
 });
 
-// bot.start((ctx) => ctx.reply('Welcome'));
-// bot.help((ctx) => ctx.reply('Send me a sticker'));
-// bot.on('sticker', (ctx) => ctx.reply('👍'));
-// bot.command('test', (ctx) => {
-//     // get the command arguments
-//     const args = ctx.message.text.split(' ').slice(1);
-//     // send the command arguments back
-//     ctx.reply(args.join(' '));
-//     ctx.replyWithMarkdownV2('Hello *World*');
-// })
-// bot.hears('hi', (ctx) => ctx.reply('Hey there'));
+// On every message sent (except in a group chat)
+bot.on("message", (ctx) => {
+    // Check if the message is from a group chat
+    if (ctx.message.chat.type === "group") {
+        return;
+    }
+    // Get users ID
+    const user_id = ctx.message.from.id;
+    // Get the users message count from the database
+    // Check if the user exists in the database
+    console.log(`SELECT * FROM users WHERE user_id = ${user_id}`);
+    db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
+        if (err) {
+            console.log(err);
+            // Return an error message if there is an error
+            ctx.replyWithMarkdown(
+                `An error occured. Please try again later.\nError: \`${err}\``
+            );
+        } else {
+            let message_count = 0;
+            let chat_messages = "";
+            if (row) {
+                message_count = row.message_count;
+                chat_messages = row.chat_messages;
+            } else {
+                // Create a new user in the database
+                const date = new Date()
+                    .toISOString()
+                    .slice(0, 19)
+                    .replace("T", " ");
+                message_count = 0;
+                chat_messages = "";
+                console.log(
+                    `INSERT INTO users VALUES (${user_id}, "", ${message_count}, '${date}')`
+                );
+                db.run(
+                    `INSERT INTO users VALUES (${user_id}, "", ${message_count}, '${date}')`
+                );
+            }
+            // If the user has not reached the message limit, send the message to OpenAI and send the response back to the user
+            if (message_count < LIMIT) {
+                // Get the users message
+                const message = ctx.message.text;
+                // Check if the message is using ` (backtick)
+                if (message.includes("`")) {
+                    ctx.reply(
+                        "Please do not use the ` character in your message."
+                    );
+                    return;
+                }
+                // Format the request to OpenAI (if the user is new, send a intro message too)
+                let request = "";
+                if (chat_messages === "") {
+                    request = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.\nHuman: ${message}\nAI:`;
+                } else {
+                    request = `${chat_messages}\nHuman: ${message}\nAI:`;
+                }
+
+                // Send the message to OpenAI
+                const response = openai.createCompletion({
+                    model: MODEL,
+                    prompt: request,
+                    temperature: TEMPERATURE,
+                    max_tokens: MAX_TOKENS,
+                    stop: ["\nHuman:", "\nAI:"],
+                });
+                // Send the response back to the user
+                response.then((data) => {
+                    let reply = data.data.choices[0].text;
+                    // If the reply is empty, send a default message
+                    if (reply === "") {
+                        reply = "I don't know what to say.";
+                    }
+                    // Trim the whitespaces
+                    reply = reply.trim();
+                    // Change the " to ' to prevent errors
+                    reply = reply.replace(/"/g, "'");
+                    ctx.reply(reply);
+                    // Update the users message count and the messages sent in the database
+                    console.log(
+                        `UPDATE users SET message_count = message_count + 1 WHERE user_id = ${user_id}`
+                    );
+                    db.run(
+                        `UPDATE users SET message_count = message_count + 1 WHERE user_id = ${user_id}`
+                    );
+                    // Add a whitespace to the beginning of the reply to make it look better
+                    reply = " " + reply;
+                    const new_chat_messages = `${request}\nHuman: ${message}\nAI:${reply}`;
+                    // console.log(new_chat_messages);
+                    console.log(
+                        `UPDATE users SET chat_messages = '${new_chat_messages}' WHERE user_id = ${user_id}`
+                    );
+                    db.run(
+                        `UPDATE users SET chat_messages = "${new_chat_messages}" WHERE user_id = ${user_id}`
+                    );
+                });
+            } else {
+                ctx.replyWithMarkdown(
+                    `You have reached the message limit of \`${LIMIT}\` messages. Please wait until midnight UTC to send more messages.`
+                );
+            }
+        }
+    });
+});
 
 // Launch the bot
 bot.launch();
