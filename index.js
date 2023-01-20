@@ -246,7 +246,7 @@ bot.command("ask", (ctx) => {
 // On every message sent (except in a group chat)
 bot.on("message", (ctx) => {
     // Check if the message is from a group chat
-    if (ctx.message.chat.type === "group") {
+    if (ctx.message.chat.type === "group" || ctx.message.chat.type === "supergroup" || ctx.message.chat.type === "channel") {
         return;
     }
     // Get users ID
@@ -278,12 +278,16 @@ bot.on("message", (ctx) => {
             if (message_count < LIMIT) {
                 // Get the users message
                 const message = ctx.message.text;
-                // Check if the message is using ` (backtick)
-                if (message.includes("`")) {
-                    ctx.reply(
-                        "Please do not use the ` character in your message!"
-                    );
-                    return;
+                // If the message is empty, send a message to the user
+                if (message !== "") {
+                    // Check if the message is using ` (backtick)
+                    if (message.includes("`")) {
+                        ctx.reply(
+                            "Please do not use the ` character in your message!"
+                        );
+                        return;
+                    }
+                    // The if statement above crashes the bot if the message is empty
                 }
                 // Format the request to OpenAI (if the user is new, send a intro message too)
                 let request = "";
