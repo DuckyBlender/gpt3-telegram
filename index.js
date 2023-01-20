@@ -39,9 +39,6 @@ db.serialize(() => {
         "CREATE TRIGGER IF NOT EXISTS log_delete AFTER DELETE ON users BEGIN INSERT INTO log VALUES (old.user_id, old.chat_messages, datetime('now')); END;"
     );
 });
-// The code above creates the tables and triggers if they don't exist. It only works after the second time the bot is started.
-// This is because the tables and triggers are created when the bot is started, but the bot is started before the tables and triggers are created.
-// To fix it
 
 // Update the slash commands
 bot.telegram.setMyCommands([
