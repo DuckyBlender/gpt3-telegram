@@ -14,6 +14,7 @@ const MAX_TOKENS = 150;
 const TEMPERATURE = 0.7;
 // const MODEL = "text-davinci-003";
 const MODEL = "text-curie-001";
+const INTRO = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.`;
 
 const config = new Configuration({
     apiKey: process.env.OPENAI_KEY,
@@ -138,7 +139,7 @@ bot.command("save", (ctx) => {
             if (row) {
                 const chat_messages = row.chat_messages;
                 // Create a file with the users messages
-                // Be sure that the saves folder exists
+                // Be sure that the saves folder exists do it asynchronously
                 if (!fs.existsSync("./saves")) {
                     fs.mkdirSync("./saves");
                 }
@@ -215,7 +216,8 @@ bot.command("ask", (ctx) => {
                 // Format the request to OpenAI
                 const request = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.\nHuman: ${message}\nAI:`;
                 // Send the message to OpenAI
-                ctx.replyWithChatAction("typing");
+                ctx.sendChatAction("typing");
+                ("typing");
                 const response = openai.createCompletion({
                     model: MODEL,
                     prompt: request,
@@ -279,19 +281,19 @@ bot.on("message", (ctx) => {
                 // Check if the message is using ` (backtick)
                 if (message.includes("`")) {
                     ctx.reply(
-                        "Please do not use the \` character in your message!"
+                        "Please do not use the ` character in your message!"
                     );
                     return;
                 }
                 // Format the request to OpenAI (if the user is new, send a intro message too)
                 let request = "";
                 if (chat_messages === "") {
-                    request = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.\nHuman: ${message}\nAI:`;
+                    request = `${INTRO}\nHuman: ${message}\nAI:`;
                 } else {
                     request = `${chat_messages}\nHuman: ${message}\nAI:`;
                 }
 
-                ctx.replyWithChatAction("typing");
+                ctx.sendChatAction("typing");
                 // Send the message to OpenAI
                 const response = openai.createCompletion({
                     model: MODEL,
@@ -317,7 +319,13 @@ bot.on("message", (ctx) => {
                     );
                     // Add a whitespace to the beginning of the reply to make it look better
                     reply = ` ${reply}`;
-                    const new_chat_messages = `${request}\nHuman: ${message}\nAI:${reply}`;
+                    let new_chat_messages = "";
+                    // If the user is new, add the intro message
+                    if (chat_messages === "") {
+                        new_chat_messages = `${INTRO}\nHuman: ${message}\nAI:${reply}`;
+                    } else {
+                        new_chat_messages = `${chat_messages}\nHuman: ${message}\nAI:${reply}`;
+                    }
                     db.run(
                         `UPDATE users SET chat_messages = "${new_chat_messages}" WHERE user_id = ${user_id}`
                     );
