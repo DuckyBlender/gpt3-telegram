@@ -28,15 +28,20 @@ const db = new sqlite3.Database("./users.db");
 // "CREATE TABLE log (user_id INTEGER, message TEXT, date DATETIME)"
 // "CREATE TRIGGER log_delete AFTER DELETE ON users BEGIN INSERT INTO log VALUES (old.user_id, old.chat_messages, datetime('now')); END;")
 
-db.run(
-    "CREATE TABLE IF NOT EXISTS users (user_id INTEGER, chat_messages TEXT, message_count INTEGER, date DATETIME)"
-);
-db.run(
-    "CREATE TABLE IF NOT EXISTS log (user_id INTEGER, message TEXT, date DATETIME)"
-);
-db.run(
-    "CREATE TRIGGER IF NOT EXISTS log_delete AFTER DELETE ON users BEGIN INSERT INTO log VALUES (old.user_id, old.chat_messages, datetime('now')); END;"
-);
+db.serialize(() => {
+    db.run(
+        "CREATE TABLE IF NOT EXISTS users (user_id INTEGER, chat_messages TEXT, message_count INTEGER, date DATETIME)"
+    );
+    db.run(
+        "CREATE TABLE IF NOT EXISTS log (user_id INTEGER, message TEXT, date DATETIME)"
+    );
+    db.run(
+        "CREATE TRIGGER IF NOT EXISTS log_delete AFTER DELETE ON users BEGIN INSERT INTO log VALUES (old.user_id, old.chat_messages, datetime('now')); END;"
+    );
+});
+// The code above creates the tables and triggers if they don't exist. It only works after the second time the bot is started.
+// This is because the tables and triggers are created when the bot is started, but the bot is started before the tables and triggers are created.
+// To fix it
 
 // Update the slash commands
 bot.telegram.setMyCommands([
@@ -136,6 +141,10 @@ bot.command("save", (ctx) => {
             if (row) {
                 const chat_messages = row.chat_messages;
                 // Create a file with the users messages
+                // Be sure that the saves folder exists
+                if (!fs.existsSync("./saves")) {
+                    fs.mkdirSync("./saves");
+                }
                 fs.writeFile(
                     `./saves/${user_id}.txt`,
                     chat_messages,
@@ -153,13 +162,16 @@ bot.command("save", (ctx) => {
                             );
                             // Delete the file after 1 minute
                             setTimeout(() => {
-                                fs.unlink(`./saves/${user_id}.txt`, (errorr) => {
-                                    if (errorr) {
-                                        ctx.replyWithMarkdown(
-                                            `An error has occured: \`${errorr}\``
-                                        );
+                                fs.unlink(
+                                    `./saves/${user_id}.txt`,
+                                    (errorr) => {
+                                        if (errorr) {
+                                            ctx.replyWithMarkdown(
+                                                `An error has occured: \`${errorr}\``
+                                            );
+                                        }
                                     }
-                                });
+                                );
                             }, 1 * 60 * 1000);
                         }
                     }
@@ -270,7 +282,7 @@ bot.on("message", (ctx) => {
                 // Check if the message is using ` (backtick)
                 if (message.includes("`")) {
                     ctx.reply(
-                        "Please do not use the ` character in your message."
+                        "Please do not use the \` character in your message!"
                     );
                     return;
                 }
