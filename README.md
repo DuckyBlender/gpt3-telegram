@@ -4,5 +4,5 @@ Simple telegram bot that can respond like a human using AI. Has a message limite
 TODO:
 - [x] Rewrite to telegraf.js
 - [x] Finish all the main functions
-- [ ] reset limit every night
+- [x] reset limit every night
 - [ ] tell me more in the issues tab
