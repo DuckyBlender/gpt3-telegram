@@ -132,3 +132,4 @@ dist
 old/
 users.db
 package-lock.json
+saves/
