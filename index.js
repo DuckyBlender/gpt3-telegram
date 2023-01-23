@@ -8,7 +8,7 @@ const cron = require("node-cron");
 dotenv.config();
 
 const LIMIT = 50; // Message limit - resets every midnight UTC
-const TIMEOUT = 60;
+const TIMEOUT = 60; // TODO: Timeout in minutes
 
 const MAX_TOKENS = 200;
 const TEMPERATURE = 0.7;
@@ -71,9 +71,8 @@ bot.command("help", (ctx) => {
 });
 
 bot.command("info", (ctx) => {
-    const info_text = `Model: \`${MODEL}\`\nMessage limit: \`${LIMIT}\`\nMessage timeout: \`${TIMEOUT}\` minutes\nOpenAI API key: \`${
-        process.env.OPENAI_KEY ? "Yes" : "No"
-    }\``;
+    // List the constants
+    const info_text = `*Message limit:* \`${LIMIT}\` per day\n*Model:* \`${MODEL}\`\n*Max tokens:* \`${MAX_TOKENS}\`\n*Temperature:* \`${TEMPERATURE}\``;
     ctx.replyWithMarkdown(info_text);
 });
 
@@ -117,7 +116,7 @@ bot.command("limit", (ctx) => {
     // Get users ID
     const user_id = ctx.message.from.id;
     // Get the users message count from the database
-    db.get('SELECT * FROM users WHERE user_id = ?', [user_id], (err, row) => {
+    db.get("SELECT * FROM users WHERE user_id = ?", [user_id], (err, row) => {
         if (err) {
             ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
@@ -207,7 +206,8 @@ bot.command("ask", (ctx) => {
                 message_count = 0;
                 db.run(
                     // Insert with the intro
-                    'INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)', [user_id, "", DEFAULT_INTRO, message_count, date] 
+                    "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
+                    [user_id, "", DEFAULT_INTRO, message_count, date]
                 );
             }
             // If the user has not reached the message limit, send the message to OpenAI and send the response back to the user
@@ -238,7 +238,8 @@ bot.command("ask", (ctx) => {
                     ctx.reply(reply);
                     // Update the users message count in the database
                     db.run(
-                        'UPDATE users SET message_count = message_count + 1 WHERE user_id = ?', [user_id]
+                        "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
+                        [user_id]
                     );
                 });
             } else {
@@ -251,10 +252,67 @@ bot.command("ask", (ctx) => {
 });
 
 bot.command("intro", (ctx) => {
-    // If the message is empty, send a message to the user with the intro message
+    // If the message is empty, send a message to the user with his current intro. If not, update the intro in the database and send a message to the user with the new intro.
     if (ctx.message.text.split(" ").length === 1) {
-        ctx.replyWithMarkdown(INTRO_MESSAGE);
-        return;
+        // Get users ID
+        const user_id = ctx.message.from.id;
+        // Check if the user exists in the database
+        db.get(
+            "SELECT * FROM users WHERE user_id = ?",
+            [user_id],
+            (err, row) => {
+                if (err) {
+                    ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
+                    return;
+                }
+                if (!row) {
+                    // Return the default intro if the user does not exist in the database
+                    ctx.replyWithMarkdown(
+                        `Your intro is: \`${DEFAULT_INTRO}\``
+                    );
+                    return;
+                }
+                // Get the users intro
+                const intro = row.intro;
+                // Send the intro to the user
+                ctx.replyWithMarkdown(`Your intro is: \`${intro}\``);
+            }
+        );
+    } else {
+        // Get the new intro
+        const intro = ctx.message.text.split(" ").slice(1).join(" ");
+        // Get users ID
+        const user_id = ctx.message.from.id;
+        // Check if the user exists in the database
+        db.get(
+            "SELECT * FROM users WHERE user_id = ?",
+            [user_id],
+            (err, row) => {
+                if (err) {
+                    ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
+                    return;
+                }
+                if (!row) {
+                    // Create a new user in the database
+                    const date = new Date()
+                        .toISOString()
+                        .slice(0, 19)
+                        .replace("T", " ");
+                    db.run(
+                        "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
+                        [user_id, "", intro, 0, date]
+                    );
+                } else {
+                    // Update the users intro in the database
+                    db.run("UPDATE users SET intro = ? WHERE user_id = ?", [
+                        intro,
+                        user_id,
+                    ]);
+                }
+                // Send a message to the user with the new intro
+                ctx.replyWithMarkdown(`Your intro is now: \`${intro}\``);
+            }
+        );
     }
 });
 
@@ -292,7 +350,8 @@ bot.on("message", (ctx) => {
             message_count = 0;
             chat_messages = "";
             db.run(
-                'INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)', [user_id, chat_messages, DEFAULT_INTRO, message_count, date]
+                "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
+                [user_id, chat_messages, DEFAULT_INTRO, message_count, date]
             );
         }
         // If the user has not reached the message limit, send the message to OpenAI and send the response back to the user
@@ -305,22 +364,29 @@ bot.on("message", (ctx) => {
         // Get the users message
         const message = ctx.message.text;
         // If the message is empty, send a message to the user
-        if (message !== "") {
-            // Check if the message is using ` (backtick)
-            if (message.includes("`")) {
-                ctx.reply("Please do not use the ` character in your message!");
-                return;
-            }
-            // The if statement above crashes the bot if the message is empty
+        if (message.trim() === "") {
+            ctx.replyWithMarkdown(
+                "Please send a message that is not empty. How did you even manage to do that?"
+            );
+            return;
         }
         // Format the request to OpenAI (if the user is new, send a intro message too)
         let request = "";
-        if (chat_messages === "") {
-            request = `${DEFAULT_INTRO}\nHuman: ${message}\nAI:`;
+        // If the user has a custom intro, use that. If not, use the default intro. Also if the user has sent messages before, add them to the request. If not, do not add them to the request.
+        if (row) {
+            if (row.intro === null || row.intro === "") {
+                request = `${DEFAULT_INTRO} \nHuman: ${message} \nAI:`;
+            } else {
+                request = `${row.intro} \nHuman: ${message} \nAI:`;
+            }
+            if (row.chat_messages !== "") {
+                request = `${row.chat_messages} \nHuman: ${message} \nAI:`;
+            }
         } else {
-            request = `${chat_messages}\nHuman: ${message}\nAI:`;
+            request = `${DEFAULT_INTRO} \nHuman: ${message} \nAI:`;
         }
 
+        // Send a typing action to the user
         ctx.sendChatAction("typing");
         // Send the message to OpenAI
         const response = openai.createCompletion({
@@ -343,7 +409,8 @@ bot.on("message", (ctx) => {
             reply = reply.replace(/"/g, "'");
             ctx.reply(reply);
             db.run(
-                'UPDATE users SET message_count = message_count + 1 WHERE user_id = ?', [user_id]
+                "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
+                [user_id]
             );
             // Add a whitespace to the beginning of the reply to make it look better
             reply = ` ${reply}`;
@@ -354,9 +421,10 @@ bot.on("message", (ctx) => {
             } else {
                 new_chat_messages = `${chat_messages}\nHuman: ${message}\nAI:${reply}`;
             }
-            db.run(
-                'UPDATE users SET chat_messages = ? WHERE user_id = ?', [new_chat_messages, user_id]
-            );
+            db.run("UPDATE users SET chat_messages = ? WHERE user_id = ?", [
+                new_chat_messages,
+                user_id,
+            ]);
         });
     });
 });
