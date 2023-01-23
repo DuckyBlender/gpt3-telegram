@@ -7,14 +7,14 @@ const cron = require("node-cron");
 
 dotenv.config();
 
-const LIMIT = 100;
-const TIMEOUT = 5;
+const LIMIT = 50; // Message limit - resets every midnight UTC
+const TIMEOUT = 60;
 
-const MAX_TOKENS = 150;
+const MAX_TOKENS = 200;
 const TEMPERATURE = 0.7;
-// const MODEL = "text-davinci-003";
-const MODEL = "text-curie-001";
-const INTRO = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.`;
+const MODEL = "text-davinci-003";
+// const MODEL = "text-curie-001";
+const DEFAULT_INTRO = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.`;
 
 const config = new Configuration({
     apiKey: process.env.OPENAI_KEY,
@@ -24,20 +24,18 @@ const openai = new OpenAIApi(config);
 const bot = new Telegraf(process.env.TELEGRAM_KEY);
 
 const db = new sqlite3.Database("./users.db");
-// Insert these tables and triggers
-// "CREATE TABLE IF NOT EXISTS users (user_id INTEGER, chat_messages TEXT, message_count INTEGER, date DATETIME)"
-// "CREATE TABLE log (user_id INTEGER, message TEXT, date DATETIME)"
-// "CREATE TRIGGER log_delete AFTER DELETE ON users BEGIN INSERT INTO log VALUES (old.user_id, old.chat_messages, datetime('now')); END;")
 
 db.serialize(() => {
     db.run(
-        "CREATE TABLE IF NOT EXISTS users (user_id INTEGER, chat_messages TEXT, message_count INTEGER, date DATETIME)"
+        "CREATE TABLE IF NOT EXISTS users (user_id INTEGER, chat_messages TEXT, intro TEXT, message_count INTEGER, date DATETIME)"
     );
+    // Create the log table
     db.run(
-        "CREATE TABLE IF NOT EXISTS log (user_id INTEGER, message TEXT, date DATETIME)"
+        "CREATE TABLE IF NOT EXISTS log (user_id INTEGER, message TEXT, intro TEXT, date DATETIME)"
     );
+    // Create a trigger that logs the chat history when a user is deleted
     db.run(
-        "CREATE TRIGGER IF NOT EXISTS log_delete AFTER DELETE ON users BEGIN INSERT INTO log VALUES (old.user_id, old.chat_messages, datetime('now')); END;"
+        "CREATE TRIGGER IF NOT EXISTS log_chat_history AFTER DELETE ON users BEGIN INSERT INTO log (user_id, message, intro, date) VALUES (old.user_id, old.chat_messages, old.intro, old.date); END"
     );
 });
 
@@ -56,12 +54,13 @@ bot.telegram.setMyCommands([
         description:
             "Show how many messages you have left (message limit resets every midnight UTC)",
     },
+    { command: "/intro", description: "Show or change the intro message" },
     { command: "/save", description: "Save the conversation to a txt file" },
 ]);
 
 // Start command
 bot.command("start", (ctx) => {
-    const start_text = `To start, just send me a message. To see the list of commands, do /help.`;
+    const start_text = `To start, just send me a message. To see the list of commands, do /help. To see how much messages you have left, do /limit. The limit resets every midnight UTC.`;
     ctx.replyWithMarkdown(start_text);
 });
 
@@ -72,7 +71,9 @@ bot.command("help", (ctx) => {
 });
 
 bot.command("info", (ctx) => {
-    const info_text = `Model: \`${MODEL}\`\nMax tokens: \`${MAX_TOKENS}\`\nTemperature: \`${TEMPERATURE}\`\nMessage limit: \`${LIMIT}\`\nMessage timeout: \`${TIMEOUT}\``;
+    const info_text = `Model: \`${MODEL}\`\nMessage limit: \`${LIMIT}\`\nMessage timeout: \`${TIMEOUT}\` minutes\nOpenAI API key: \`${
+        process.env.OPENAI_KEY ? "Yes" : "No"
+    }\``;
     ctx.replyWithMarkdown(info_text);
 });
 
@@ -88,13 +89,23 @@ bot.command("reset", (ctx) => {
         } else {
             if (row) {
                 const message_count = row.message_count;
-                db.run(`DELETE FROM users WHERE user_id = ${user_id}`);
-                db.run(
-                    `INSERT INTO users VALUES (${user_id}, '', ${message_count}, '${date}')`
-                );
-                ctx.reply(
-                    "Chat history reset! Your message count has not been reset."
-                );
+                // Save the intro if it is not the default intro
+                db.run("DELETE FROM users WHERE user_id = ?", [user_id]);
+                // If the intro was changed, make sure to save it
+                if (row.intro !== DEFAULT_INTRO) {
+                    db.run(
+                        "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
+                        [user_id, "", row.intro, message_count, date]
+                    );
+                } else {
+                    db.run(
+                        "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
+                        [user_id, "", DEFAULT_INTRO, message_count, date]
+                    );
+                    ctx.reply(
+                        "Chat history reset! Your message count has not been reset."
+                    );
+                }
             } else {
                 ctx.reply("You have not started a conversation yet!");
             }
@@ -106,7 +117,7 @@ bot.command("limit", (ctx) => {
     // Get users ID
     const user_id = ctx.message.from.id;
     // Get the users message count from the database
-    db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
+    db.get('SELECT * FROM users WHERE user_id = ?', [user_id], (err, row) => {
         if (err) {
             ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
@@ -135,49 +146,44 @@ bot.command("save", (ctx) => {
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
             ctx.reply(`An error has occured: ${err}`);
-        } else {
-            if (row) {
-                const chat_messages = row.chat_messages;
-                // Create a file with the users messages
-                // Be sure that the saves folder exists do it asynchronously
-                if (!fs.existsSync("./saves")) {
-                    fs.mkdirSync("./saves");
-                }
-                fs.writeFile(
-                    `./saves/${user_id}.txt`,
-                    chat_messages,
-                    "utf8",
-                    (error) => {
-                        if (error) {
-                            ctx.replyWithMarkdown(
-                                `An error has occured: \`${err}\``
-                            );
-                        } else {
-                            // Send the file to the user with a message
-                            ctx.replyWithDocument(
-                                { source: `./saves/${user_id}.txt` },
-                                { caption: "Here is our chat history so far" }
-                            );
-                            // Delete the file after 1 minute
-                            setTimeout(() => {
-                                fs.unlink(
-                                    `./saves/${user_id}.txt`,
-                                    (errorr) => {
-                                        if (errorr) {
-                                            ctx.replyWithMarkdown(
-                                                `An error has occured: \`${errorr}\``
-                                            );
-                                        }
-                                    }
-                                );
-                            }, 1 * 60 * 1000);
-                        }
-                    }
-                );
-            } else {
-                ctx.reply("You have not started a conversation yet!");
-            }
+            return;
         }
+        if (!row) {
+            ctx.reply("You have not started a conversation yet!");
+            return;
+        }
+        const CHAT_MESSAGES = row.chat_messages;
+        // Create a file with the users messages
+        // Be sure that the saves folder exists do it asynchronously
+        if (!fs.existsSync("./saves")) {
+            fs.mkdirSync("./saves");
+        }
+        fs.writeFile(
+            `./saves/${user_id}.txt`,
+            CHAT_MESSAGES,
+            "utf8",
+            (error) => {
+                if (error) {
+                    ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
+                    return;
+                }
+                // Send the file to the user with a message
+                ctx.replyWithDocument(
+                    { source: `./saves/${user_id}.txt` },
+                    { caption: "Here is our chat history so far" }
+                );
+                // Delete the file after 1 minute
+                setTimeout(() => {
+                    fs.unlink(`./saves/${user_id}.txt`, (errorr) => {
+                        if (errorr) {
+                            ctx.replyWithMarkdown(
+                                `An error has occured: \`${errorr}\``
+                            );
+                        }
+                    });
+                }, 1 * 60 * 1000);
+            }
+        );
     });
 });
 
@@ -200,7 +206,8 @@ bot.command("ask", (ctx) => {
                     .replace("T", " ");
                 message_count = 0;
                 db.run(
-                    `INSERT INTO users VALUES (${user_id}, "", ${message_count}, '${date}')`
+                    // Insert with the intro
+                    'INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)', [user_id, "", DEFAULT_INTRO, message_count, date] 
                 );
             }
             // If the user has not reached the message limit, send the message to OpenAI and send the response back to the user
@@ -231,7 +238,7 @@ bot.command("ask", (ctx) => {
                     ctx.reply(reply);
                     // Update the users message count in the database
                     db.run(
-                        `UPDATE users SET message_count = message_count + 1 WHERE user_id = ${user_id}`
+                        'UPDATE users SET message_count = message_count + 1 WHERE user_id = ?', [user_id]
                     );
                 });
             } else {
@@ -243,10 +250,22 @@ bot.command("ask", (ctx) => {
     });
 });
 
+bot.command("intro", (ctx) => {
+    // If the message is empty, send a message to the user with the intro message
+    if (ctx.message.text.split(" ").length === 1) {
+        ctx.replyWithMarkdown(INTRO_MESSAGE);
+        return;
+    }
+});
+
 // On every message sent (except in a group chat)
 bot.on("message", (ctx) => {
     // Check if the message is from a group chat
-    if (ctx.message.chat.type === "group" || ctx.message.chat.type === "supergroup" || ctx.message.chat.type === "channel") {
+    if (
+        ctx.message.chat.type === "group" ||
+        ctx.message.chat.type === "supergroup" ||
+        ctx.message.chat.type === "channel"
+    ) {
         return;
     }
     // Get users ID
@@ -256,90 +275,89 @@ bot.on("message", (ctx) => {
     db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
         if (err) {
             ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
-        } else {
-            let message_count = 0;
-            let chat_messages = "";
-            if (row) {
-                message_count = row.message_count;
-                chat_messages = row.chat_messages;
-            } else {
-                // Create a new user in the database
-                const date = new Date()
-                    .toISOString()
-                    .slice(0, 19)
-                    .replace("T", " ");
-                message_count = 0;
-                chat_messages = "";
-                db.run(
-                    `INSERT INTO users VALUES (${user_id}, "", ${message_count}, '${date}')`
-                );
-            }
-            // If the user has not reached the message limit, send the message to OpenAI and send the response back to the user
-            if (message_count < LIMIT) {
-                // Get the users message
-                const message = ctx.message.text;
-                // If the message is empty, send a message to the user
-                if (message !== "") {
-                    // Check if the message is using ` (backtick)
-                    if (message.includes("`")) {
-                        ctx.reply(
-                            "Please do not use the ` character in your message!"
-                        );
-                        return;
-                    }
-                    // The if statement above crashes the bot if the message is empty
-                }
-                // Format the request to OpenAI (if the user is new, send a intro message too)
-                let request = "";
-                if (chat_messages === "") {
-                    request = `${INTRO}\nHuman: ${message}\nAI:`;
-                } else {
-                    request = `${chat_messages}\nHuman: ${message}\nAI:`;
-                }
-
-                ctx.sendChatAction("typing");
-                // Send the message to OpenAI
-                const response = openai.createCompletion({
-                    model: MODEL,
-                    prompt: request,
-                    temperature: TEMPERATURE,
-                    max_tokens: MAX_TOKENS,
-                    stop: ["\nHuman:", "\nAI:"],
-                });
-                // Send the response back to the user
-                response.then((data) => {
-                    let reply = data.data.choices[0].text;
-                    // If the reply is empty, send a default message
-                    if (reply === "") {
-                        reply = "I don't know what to say.";
-                    }
-                    // Trim the whitespaces
-                    reply = reply.trim();
-                    // Change the " to ' to prevent errors
-                    reply = reply.replace(/"/g, "'");
-                    ctx.reply(reply);
-                    db.run(
-                        `UPDATE users SET message_count = message_count + 1 WHERE user_id = ${user_id}`
-                    );
-                    // Add a whitespace to the beginning of the reply to make it look better
-                    reply = ` ${reply}`;
-                    let new_chat_messages = "";
-                    // If the user is new, add the intro message
-                    if (chat_messages === "") {
-                        new_chat_messages = `${INTRO}\nHuman: ${message}\nAI:${reply}`;
-                    } else {
-                        new_chat_messages = `${chat_messages}\nHuman: ${message}\nAI:${reply}`;
-                    }
-                    db.run(
-                        `UPDATE users SET chat_messages = "${new_chat_messages}" WHERE user_id = ${user_id}`
-                    );
-                });
-            } else {
-                ctx.replyWithMarkdown(
-                    `You have reached the message limit of \`${LIMIT}\` messages. Please wait until midnight UTC to send more messages.`
-                );
-            }
+            return;
         }
+
+        let message_count = 0;
+        let chat_messages = "";
+        if (row) {
+            message_count = row.message_count;
+            chat_messages = row.chat_messages;
+        } else {
+            // Create a new user in the database
+            const date = new Date()
+                .toISOString()
+                .slice(0, 19)
+                .replace("T", " ");
+            message_count = 0;
+            chat_messages = "";
+            db.run(
+                'INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)', [user_id, chat_messages, DEFAULT_INTRO, message_count, date]
+            );
+        }
+        // If the user has not reached the message limit, send the message to OpenAI and send the response back to the user
+        if (message_count > LIMIT) {
+            ctx.replyWithMarkdown(
+                `You have reached the message limit of \`${LIMIT}\` messages. Please wait until midnight UTC to send more messages.`
+            );
+            return;
+        }
+        // Get the users message
+        const message = ctx.message.text;
+        // If the message is empty, send a message to the user
+        if (message !== "") {
+            // Check if the message is using ` (backtick)
+            if (message.includes("`")) {
+                ctx.reply("Please do not use the ` character in your message!");
+                return;
+            }
+            // The if statement above crashes the bot if the message is empty
+        }
+        // Format the request to OpenAI (if the user is new, send a intro message too)
+        let request = "";
+        if (chat_messages === "") {
+            request = `${DEFAULT_INTRO}\nHuman: ${message}\nAI:`;
+        } else {
+            request = `${chat_messages}\nHuman: ${message}\nAI:`;
+        }
+
+        ctx.sendChatAction("typing");
+        // Send the message to OpenAI
+        const response = openai.createCompletion({
+            model: MODEL,
+            prompt: request,
+            temperature: TEMPERATURE,
+            max_tokens: MAX_TOKENS,
+            stop: ["\nHuman:", "\nAI:"],
+        });
+        // Send the response back to the user
+        response.then((data) => {
+            let reply = data.data.choices[0].text;
+            // If the reply is empty, send a default message
+            if (reply === "") {
+                reply = "I don't know what to say.";
+            }
+            // Trim the whitespaces
+            reply = reply.trim();
+            // Change the " to ' to prevent errors
+            reply = reply.replace(/"/g, "'");
+            ctx.reply(reply);
+            db.run(
+                'UPDATE users SET message_count = message_count + 1 WHERE user_id = ?', [user_id]
+            );
+            // Add a whitespace to the beginning of the reply to make it look better
+            reply = ` ${reply}`;
+            let new_chat_messages = "";
+            // If the user is new, add the intro message
+            if (chat_messages === "") {
+                new_chat_messages = `${DEFAULT_INTRO}\nHuman: ${message}\nAI:${reply}`;
+            } else {
+                new_chat_messages = `${chat_messages}\nHuman: ${message}\nAI:${reply}`;
+            }
+            db.run(
+                'UPDATE users SET chat_messages = ? WHERE user_id = ?', [new_chat_messages, user_id]
+            );
+        });
     });
 });
 
