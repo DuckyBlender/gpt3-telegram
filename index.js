@@ -59,24 +59,24 @@ bot.telegram.setMyCommands([
 ]);
 
 // Start command
-bot.command("start", (ctx) => {
+bot.command("start", async (ctx) => {
     const start_text = `To start, just send me a message. To see the list of commands, do /help. To see how much messages you have left, do /limit. The limit resets every midnight UTC.`;
     ctx.replyWithMarkdown(start_text);
 });
 
 // Help command
-bot.command("help", (ctx) => {
-    const help_text = `Hi, I'm a chatbot (\`${MODEL}\` model from OpenAI). To get started, just type something in the chat!\n*You can use the following commands:*\n/start - Start the chatbot\n/help - Show this message\n/limit - Show how many messages you have left (message limit resets every midnight UTC)\n/save - Save the conversation to a txt file\n/reset - Reset the chatbot`;
+bot.command("help", async (ctx) => {
+    const help_text = `*Commands:*\n/start - Show instructions on how to use the bot\n/help - Show this message\n/info - Show info about the bot\n/ask - Ask the bot a question\n/reset - Reset the chatbot\n/limit - Show how many messages you have left (message limit resets every midnight UTC)\n/intro - Show, change or reset the intro message\n/save - Save the conversation to a txt file`
     ctx.replyWithMarkdown(help_text);
 });
 
-bot.command("info", (ctx) => {
+bot.command("info", async (ctx) => {
     // List the constants
     const info_text = `*Message limit:* \`${LIMIT}\` per day\n*Model:* \`${MODEL}\`\n*Max tokens:* \`${MAX_TOKENS}\`\n*Temperature:* \`${TEMPERATURE}\``;
     ctx.replyWithMarkdown(info_text);
 });
 
-bot.command("reset", (ctx) => {
+bot.command("reset", async (ctx) => {
     // Get users ID
     const user_id = ctx.message.from.id;
     // Get current time
@@ -112,7 +112,7 @@ bot.command("reset", (ctx) => {
     });
 });
 
-bot.command("limit", (ctx) => {
+bot.command("limit", async (ctx) => {
     // Get users ID
     const user_id = ctx.message.from.id;
     // Get the users message count from the database
@@ -138,7 +138,7 @@ bot.command("limit", (ctx) => {
     });
 });
 
-bot.command("save", (ctx) => {
+bot.command("save", async (ctx) => {
     // Get users ID
     const user_id = ctx.message.from.id;
     // Get the users messages from the database
@@ -186,11 +186,11 @@ bot.command("save", (ctx) => {
     });
 });
 
-bot.command("ask", (ctx) => {
+bot.command("ask", async (ctx) => {
     // Get users ID
     const user_id = ctx.message.from.id;
     // Check if the user exists in the database
-    db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
+    db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, async (err, row) => {
         if (err) {
             ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
         } else {
@@ -225,23 +225,22 @@ bot.command("ask", (ctx) => {
                 // Send the message to OpenAI
                 ctx.sendChatAction("typing");
                 ("typing");
-                const response = openai.createCompletion({
+                const response = await openai.createCompletion({
                     model: MODEL,
                     prompt: request,
                     temperature: TEMPERATURE,
                     max_tokens: MAX_TOKENS,
                     stop: ["\nHuman:", "\nAI:"],
                 });
-                // Send the response back to the user
-                response.then((data) => {
-                    const reply = data.data.choices[0].text;
-                    ctx.reply(reply);
-                    // Update the users message count in the database
-                    db.run(
-                        "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
-                        [user_id]
-                    );
-                });
+                // Send the response to the user
+                const reply = response.data.choices[0].text;
+                ctx.reply(reply);
+                // Update the users message count in the database
+                db.run(
+                    "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
+                    [user_id]
+                );
+
             } else {
                 ctx.replyWithMarkdown(
                     `You have reached the message limit of \`${LIMIT}\` messages. Please wait until midnight UTC to send more messages.`
@@ -251,7 +250,7 @@ bot.command("ask", (ctx) => {
     });
 });
 
-bot.command("intro", (ctx) => {
+bot.command("intro", async (ctx) => {
     // If the message is empty, send a message to the user with his current intro. If not, update the intro in the database and send a message to the user with the new intro.
     if (ctx.message.text.split(" ").length === 1) {
         // Get users ID
@@ -278,6 +277,7 @@ bot.command("intro", (ctx) => {
                 ctx.replyWithMarkdown(`Your intro is: \`${intro}\``);
             }
         );
+    // The user is trying to update his intro
     } else {
         // Get the new intro
         const intro = ctx.message.text.split(" ").slice(1).join(" ");
@@ -298,11 +298,34 @@ bot.command("intro", (ctx) => {
                         .toISOString()
                         .slice(0, 19)
                         .replace("T", " ");
+                    // If the user passed "reset" or "clear" as the intro, set the intro to the default intro 
+                    if (intro === "reset" || intro === "clear") {
+                        db.run(
+                            "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
+                            [user_id, "", DEFAULT_INTRO, 0, date]
+                        );
+                        ctx.replyWithMarkdown(
+                            `Your new intro is: \`${DEFAULT_INTRO}\``
+                        );
+                        return;
+                    }
+                    // Insert the new intro
                     db.run(
                         "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
                         [user_id, "", intro, 0, date]
                     );
                 } else {
+                    // If the user passed "reset" or "clear" as the intro, set the intro to the default intro 
+                    if (intro === "reset" || intro === "clear") {
+                        db.run(
+                            "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
+                            [user_id, "", DEFAULT_INTRO, 0, date]
+                        );
+                        ctx.replyWithMarkdown(
+                            `Your new intro is: \`${DEFAULT_INTRO}\``
+                        );
+                        return;
+                    }
                     // Update the users intro in the database
                     db.run("UPDATE users SET intro = ? WHERE user_id = ?", [
                         intro,
@@ -310,14 +333,14 @@ bot.command("intro", (ctx) => {
                     ]);
                 }
                 // Send a message to the user with the new intro
-                ctx.replyWithMarkdown(`Your intro is now: \`${intro}\``);
+                ctx.replyWithMarkdown(`Your new intro is: \`${intro}\``);
             }
         );
     }
 });
 
 // On every message sent (except in a group chat)
-bot.on("message", (ctx) => {
+bot.on("message", async (ctx) => {
     // Check if the message is from a group chat
     if (
         ctx.message.chat.type === "group" ||
@@ -330,7 +353,7 @@ bot.on("message", (ctx) => {
     const user_id = ctx.message.from.id;
     // Get the users message count from the database
     // Check if the user exists in the database
-    db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, (err, row) => {
+    db.get(`SELECT * FROM users WHERE user_id = ${user_id}`, async (err, row) => {
         if (err) {
             ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
             return;
@@ -339,8 +362,10 @@ bot.on("message", (ctx) => {
         let message_count = 0;
         let chat_messages = "";
         if (row) {
+            // Get his info from the database
             message_count = row.message_count;
             chat_messages = row.chat_messages;
+            intro = row.intro;
         } else {
             // Create a new user in the database
             const date = new Date()
@@ -354,7 +379,7 @@ bot.on("message", (ctx) => {
                 [user_id, chat_messages, DEFAULT_INTRO, message_count, date]
             );
         }
-        // If the user has not reached the message limit, send the message to OpenAI and send the response back to the user
+        // Check if the user has reached the message limit
         if (message_count > LIMIT) {
             ctx.replyWithMarkdown(
                 `You have reached the message limit of \`${LIMIT}\` messages. Please wait until midnight UTC to send more messages.`
@@ -373,23 +398,18 @@ bot.on("message", (ctx) => {
         // Format the request to OpenAI (if the user is new, send a intro message too)
         let request = "";
         // If the user has a custom intro, use that. If not, use the default intro. Also if the user has sent messages before, add them to the request. If not, do not add them to the request.
-        if (row) {
-            if (row.intro === null || row.intro === "") {
-                request = `${DEFAULT_INTRO} \nHuman: ${message} \nAI:`;
-            } else {
-                request = `${row.intro} \nHuman: ${message} \nAI:`;
-            }
-            if (row.chat_messages !== "") {
-                request = `${row.chat_messages} \nHuman: ${message} \nAI:`;
-            }
+        if (chat_messages === "") {
+            request = `${intro}\nHuman: ${message}\nAI:`;
         } else {
-            request = `${DEFAULT_INTRO} \nHuman: ${message} \nAI:`;
+            request = `${intro}\n${chat_messages}\nHuman: ${message}\nAI:`;
         }
 
         // Send a typing action to the user
         ctx.sendChatAction("typing");
         // Send the message to OpenAI
-        const response = openai.createCompletion({
+        // For debugging purposes, print the request to the console
+        // console.log(`===\n${request}\n===`);
+        const response = await openai.createCompletion({
             model: MODEL,
             prompt: request,
             temperature: TEMPERATURE,
@@ -397,42 +417,47 @@ bot.on("message", (ctx) => {
             stop: ["\nHuman:", "\nAI:"],
         });
         // Send the response back to the user
-        response.then((data) => {
-            let reply = data.data.choices[0].text;
-            // If the reply is empty, send a default message
-            if (reply === "") {
-                reply = "I don't know what to say.";
-            }
-            // Trim the whitespaces
-            reply = reply.trim();
-            // Change the " to ' to prevent errors
-            reply = reply.replace(/"/g, "'");
-            ctx.reply(reply);
-            db.run(
-                "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
-                [user_id]
-            );
-            // Add a whitespace to the beginning of the reply to make it look better
-            reply = ` ${reply}`;
-            let new_chat_messages = "";
-            // If the user is new, add the intro message
-            if (chat_messages === "") {
-                new_chat_messages = `${DEFAULT_INTRO}\nHuman: ${message}\nAI:${reply}`;
-            } else {
-                new_chat_messages = `${chat_messages}\nHuman: ${message}\nAI:${reply}`;
-            }
-            db.run("UPDATE users SET chat_messages = ? WHERE user_id = ?", [
-                new_chat_messages,
-                user_id,
-            ]);
-        });
+        let reply = response.data.choices[0].text;
+        // If the reply is empty, send a default message
+        if (reply === "") {
+            reply = "I don't know what to say.";
+        }
+        // Trim the whitespaces
+        reply = reply.trim();
+        // Change the " to ' to prevent errors
+        reply = reply.replace(/"/g, "'");
+        ctx.reply(reply);
+        db.run(
+            "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
+            [user_id]
+        );
+        // Add a whitespace to the beginning of the reply to make it look better
+        reply = ` ${reply}`;
+        let new_chat_messages = "";
+        // If the user is new, add the intro message
+        if (chat_messages === "") {
+            new_chat_messages = `${intro}\nHuman: ${message}\nAI:${reply}`;
+        } else {
+            new_chat_messages = `${chat_messages}\nHuman: ${message}\nAI:${reply}`;
+        }
+        db.run("UPDATE users SET chat_messages = ? WHERE user_id = ?", [
+            new_chat_messages,
+            user_id,
+        ]);
     });
 });
 
 // Every day at 23:00 (UTC time in Polish timezone) reset the message count for all users
 cron.schedule("0 23 * * *", () => {
-    console.log("Resetting message count for all users.");
     db.run(`UPDATE users SET message_count = 0`);
+    // Get the count of users in the database
+    db.get(`SELECT COUNT(*) FROM users`, (err, row) => {
+        if (err) {
+            console.log(`An error has occured: ${err}`);
+            return;
+        }
+        console.log(`Reset message count for ${row["COUNT(*)"]} users.`);
+    });
 });
 
 console.log(`Bot started.`);
