@@ -298,34 +298,12 @@ bot.command("intro", async (ctx) => {
                         .toISOString()
                         .slice(0, 19)
                         .replace("T", " ");
-                    // If the user passed "reset" or "clear" as the intro, set the intro to the default intro 
-                    if (intro === "reset" || intro === "clear") {
-                        db.run(
-                            "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
-                            [user_id, "", DEFAULT_INTRO, 0, date]
-                        );
-                        ctx.replyWithMarkdown(
-                            `Your new intro is: \`${DEFAULT_INTRO}\``
-                        );
-                        return;
-                    }
                     // Insert the new intro
                     db.run(
                         "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
                         [user_id, "", intro, 0, date]
                     );
                 } else {
-                    // If the user passed "reset" or "clear" as the intro, set the intro to the default intro 
-                    if (intro === "reset" || intro === "clear") {
-                        db.run(
-                            "INSERT INTO users (user_id, chat_messages, intro, message_count, date) VALUES (?, ?, ?, ?, ?)",
-                            [user_id, "", DEFAULT_INTRO, 0, date]
-                        );
-                        ctx.replyWithMarkdown(
-                            `Your new intro is: \`${DEFAULT_INTRO}\``
-                        );
-                        return;
-                    }
                     // Update the users intro in the database
                     db.run("UPDATE users SET intro = ? WHERE user_id = ?", [
                         intro,
