@@ -1,11 +1,14 @@
-const { Telegraf } = require("telegraf");
-const dotenv = require("dotenv");
-const { Configuration, OpenAIApi } = require("openai");
-const sqlite3 = require("sqlite3").verbose();
-const fs = require("fs");
-const cron = require("node-cron");
+import { Telegraf } from "telegraf";
+import { config as _config } from "dotenv";
+import { Configuration, OpenAIApi } from "openai";
 
-dotenv.config();
+import pkg from 'sqlite3';
+const { Database } = pkg;
+
+import { existsSync, mkdirSync, writeFile, unlink } from "fs";
+import { schedule } from "node-cron";
+
+_config();
 
 const LIMIT = 50; // Message limit - resets every midnight UTC
 const TIMEOUT = 60; // TODO: Timeout in minutes
@@ -23,7 +26,7 @@ const openai = new OpenAIApi(config);
 
 const bot = new Telegraf(process.env.TELEGRAM_KEY);
 
-const db = new sqlite3.Database("./users.db");
+const db = new Database("./users.db");
 
 db.serialize(() => {
     db.run(
@@ -154,10 +157,10 @@ bot.command("save", async (ctx) => {
         const CHAT_MESSAGES = row.chat_messages;
         // Create a file with the users messages
         // Be sure that the saves folder exists do it asynchronously
-        if (!fs.existsSync("./saves")) {
-            fs.mkdirSync("./saves");
+        if (!existsSync("./saves")) {
+            mkdirSync("./saves");
         }
-        fs.writeFile(
+        writeFile(
             `./saves/${user_id}.txt`,
             CHAT_MESSAGES,
             "utf8",
@@ -173,7 +176,7 @@ bot.command("save", async (ctx) => {
                 );
                 // Delete the file after 1 minute
                 setTimeout(() => {
-                    fs.unlink(`./saves/${user_id}.txt`, (errorr) => {
+                    unlink(`./saves/${user_id}.txt`, (errorr) => {
                         if (errorr) {
                             ctx.replyWithMarkdown(
                                 `An error has occured: \`${errorr}\``
@@ -410,7 +413,7 @@ bot.on("message", async (ctx) => {
 });
 
 // Every day at 23:00 (UTC time in Polish timezone) reset the message count for all users
-cron.schedule("0 23 * * *", () => {
+schedule("0 23 * * *", () => {
     db.run(`UPDATE users SET message_count = 0`);
     // Get the count of users in the database
     db.get(`SELECT COUNT(*) FROM users`, (err, row) => {
