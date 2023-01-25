@@ -1,5 +1,5 @@
 import { Context, Markup, Telegraf } from "telegraf";
-import { message } from "telegraf/filters"
+import { message } from "telegraf/filters";
 import { Update } from "typegram";
 import { config as _config } from "dotenv";
 _config(); // Import the .env file
@@ -9,11 +9,8 @@ import { Configuration, OpenAIApi } from "openai";
 import { existsSync, mkdirSync, writeFile, unlink } from "fs";
 import { schedule } from "node-cron";
 
-import pkg from 'sqlite3';
+import pkg from "sqlite3";
 const { Database } = pkg;
-
-
-
 
 const LIMIT = 50; // Message limit - resets every midnight UTC
 const TIMEOUT = 60; // TODO: Timeout in minutes
@@ -24,15 +21,17 @@ const MODEL = "text-davinci-003";
 // const MODEL = "text-curie-001";
 const DEFAULT_INTRO = `You are a super advanced AI. You are talking to a human through a chat interface. Try to have a conversation with the human, while pretending to be a human yourself.`;
 
+// OpenAI API setup
 const config = new Configuration({
     apiKey: process.env.OPENAI_KEY,
 });
 const openai = new OpenAIApi(config);
 
+// Bot setup
 const bot: Telegraf<Context<Update>> = new Telegraf(telegram_key);
 
+// Database setup
 const db = new Database("./users.db");
-
 db.serialize(() => {
     db.run(
         "CREATE TABLE IF NOT EXISTS users (user_id INTEGER, chat_messages TEXT, intro TEXT, message_count INTEGER, date DATETIME)"
@@ -165,32 +164,27 @@ bot.command("save", async (ctx) => {
         if (!existsSync("./saves")) {
             mkdirSync("./saves");
         }
-        writeFile(
-            `./saves/${user_id}.txt`,
-            CHAT_MESSAGES,
-            "utf8",
-            (error) => {
-                if (error) {
-                    ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
-                    return;
-                }
-                // Send the file to the user with a message
-                ctx.replyWithDocument(
-                    { source: `./saves/${user_id}.txt` },
-                    { caption: "Here is our chat history so far" }
-                );
-                // Delete the file after 1 minute
-                setTimeout(() => {
-                    unlink(`./saves/${user_id}.txt`, (errorr) => {
-                        if (errorr) {
-                            ctx.replyWithMarkdown(
-                                `An error has occured: \`${errorr}\``
-                            );
-                        }
-                    });
-                }, 1 * 60 * 1000);
+        writeFile(`./saves/${user_id}.txt`, CHAT_MESSAGES, "utf8", (error) => {
+            if (error) {
+                ctx.replyWithMarkdown(`An error has occured: \`${err}\``);
+                return;
             }
-        );
+            // Send the file to the user with a message
+            ctx.replyWithDocument(
+                { source: `./saves/${user_id}.txt` },
+                { caption: "Here is our chat history so far" }
+            );
+            // Delete the file after 1 minute
+            setTimeout(() => {
+                unlink(`./saves/${user_id}.txt`, (errorr) => {
+                    if (errorr) {
+                        ctx.replyWithMarkdown(
+                            `An error has occured: \`${errorr}\``
+                        );
+                    }
+                });
+            }, 1 * 60 * 1000);
+        });
     });
 });
 
@@ -356,7 +350,7 @@ bot.on(message("text"), async (ctx) => {
                 return;
             }
             // Get the users message
-            const message:string = ctx.message.text;
+            const message: string = ctx.message.text;
             // If the message is empty, send a message to the user
             if (message.trim() === "") {
                 ctx.replyWithMarkdown(
