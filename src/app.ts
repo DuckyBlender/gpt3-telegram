@@ -1,14 +1,19 @@
-import { Telegraf } from "telegraf";
+import { Context, Markup, Telegraf } from "telegraf";
+import { message } from "telegraf/filters"
+import { Update } from "typegram";
 import { config as _config } from "dotenv";
+_config(); // Import the .env file
+let telegram_key = process.env.TELEGRAM_KEY as string;
+
 import { Configuration, OpenAIApi } from "openai";
+import { existsSync, mkdirSync, writeFile, unlink } from "fs";
+import { schedule } from "node-cron";
 
 import pkg from 'sqlite3';
 const { Database } = pkg;
 
-import { existsSync, mkdirSync, writeFile, unlink } from "fs";
-import { schedule } from "node-cron";
 
-_config();
+
 
 const LIMIT = 50; // Message limit - resets every midnight UTC
 const TIMEOUT = 60; // TODO: Timeout in minutes
@@ -24,7 +29,7 @@ const config = new Configuration({
 });
 const openai = new OpenAIApi(config);
 
-const bot = new Telegraf(process.env.TELEGRAM_KEY);
+const bot: Telegraf<Context<Update>> = new Telegraf(telegram_key);
 
 const db = new Database("./users.db");
 
@@ -241,7 +246,7 @@ bot.command("ask", async (ctx) => {
                     });
                     // Send the response to the user
                     const reply = response.data.choices[0].text;
-                    ctx.reply(reply);
+                    ctx.reply(reply as string);
                     // Update the users message count in the database
                     db.run(
                         "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
@@ -302,12 +307,11 @@ bot.command("intro", async (ctx) => {
 });
 
 // On every message sent (except in a group chat)
-bot.on("message", async (ctx) => {
+bot.on(message("text"), async (ctx) => {
     // Check if the message is from a group chat
     if (
         ctx.message.chat.type === "group" ||
-        ctx.message.chat.type === "supergroup" ||
-        ctx.message.chat.type === "channel"
+        ctx.message.chat.type === "supergroup"
     ) {
         return;
     }
@@ -325,6 +329,7 @@ bot.on("message", async (ctx) => {
 
             let message_count = 0;
             let chat_messages = "";
+            let intro = "";
             if (row) {
                 // Get his info from the database
                 message_count = row.message_count;
@@ -351,7 +356,7 @@ bot.on("message", async (ctx) => {
                 return;
             }
             // Get the users message
-            const message = ctx.message.text;
+            const message:string = ctx.message.text;
             // If the message is empty, send a message to the user
             if (message.trim() === "") {
                 ctx.replyWithMarkdown(
@@ -381,12 +386,21 @@ bot.on("message", async (ctx) => {
                 stop: ["\nHuman:", "\nAI:"],
             });
             // Send the response back to the user
+            if (response === undefined) {
+                ctx.replyWithMarkdown(
+                    "An error has occured. Please try again later."
+                );
+                return;
+            }
             let reply = response.data.choices[0].text;
             // If the reply is empty, send a default message
             if (reply === "") {
                 reply = "I don't know what to say.";
             }
             // Trim the whitespaces
+            if (reply == undefined) {
+                reply = "I don't know what to say.";
+            }
             reply = reply.trim();
             // Change the " to ' to prevent errors
             reply = reply.replace(/"/g, "'");
