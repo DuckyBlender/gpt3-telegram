@@ -45,3 +45,6 @@ users.db
 
 # package-lock.json
 package-lock.json
+
+# dist folder
+dist/

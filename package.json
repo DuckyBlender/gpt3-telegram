@@ -1,12 +1,13 @@
 {
-  "name": "BALLIN",
+  "name": "gpt3-telegram",
   "version": "1.0.0",
   "description": "",
   "main": "dist/app.js",
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/app.js"
+    "start": "node dist/app.js",
+    "run": "npm run build && npm run start"
   },
   "keywords": [],
   "author": "",
