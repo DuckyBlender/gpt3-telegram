@@ -263,9 +263,21 @@ bot.command("ask", async (ctx) => {
                     max_tokens: MAX_TOKENS,
                     stop: ["\nHuman:", "\nAI:"],
                 });
+                // If there is no response from the server or the response is empty, send a message to the user
+                let reply = "";
+                if (!response.data) {
+                    reply =
+                        "An error has occured! Check https://status.openai.com to see if the API is down.";
+                }
+                if (response.data.choices[0].text === "") {
+                    reply = "I don't know what to say!";
+                } else {
+                    reply = response.data.choices[0].text as string;
+                }
+                // Trim the response
+                reply = reply.trim();
                 // Send the response to the user
-                const reply = response.data.choices[0].text;
-                ctx.reply(reply as string);
+                ctx.reply(reply);
                 // Update the users message count in the database
                 db.run(
                     "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
@@ -410,24 +422,18 @@ bot.on(message("text"), async (ctx) => {
                 stop: ["\nHuman:", "\nAI:"],
             });
             // Send the response back to the user
-            if (response === undefined) {
-                await ctx.replyWithMarkdown(
-                    "An error has occured. Please try again later."
-                );
-                return;
+            let reply = "";
+            if (!response.data) {
+                reply =
+                    "An error has occured! Check https://status.openai.com to see if the API is down.";
             }
-            let reply = response.data.choices[0].text;
-            // If the reply is empty, send a default message
-            if (reply === "") {
-                reply = "I don't know what to say.";
+            if (response.data.choices[0].text === "") {
+                reply = "I don't know what to say!";
+            } else {
+                reply = response.data.choices[0].text as string;
             }
-            // Trim the whitespaces
-            if (reply == undefined) {
-                reply = "I don't know what to say.";
-            }
+            // Send the response to the user
             reply = reply.trim();
-            // Change the " to ' to prevent errors
-            reply = reply.replace(/"/g, "'");
             ctx.reply(reply);
             db.run(
                 "UPDATE users SET message_count = message_count + 1 WHERE user_id = ?",
